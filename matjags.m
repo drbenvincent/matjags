@@ -186,7 +186,6 @@ for whchain=1:nChains
     end
     
     fprintf( fid , 'model in "%s"\n' , modelFullPath);
-    
     fprintf( fid , 'data in "%s"\n' , jagsDataFullPath );
     fprintf( fid , 'compile, nchains(1)\n' );
     fprintf( fid , 'parameters in "%s"\n' , InitDataFullPath );
@@ -197,9 +196,7 @@ for whchain=1:nChains
         fprintf( fid , 'monitor set %s, thin(%d)\n' , monitorParams{ j } , thin );
     end
     if dodic
-        %fprintf( fid , 'monitor deviance, thin(%d)\n' , thin );
         fprintf( fid , 'monitor deviance\n' );
-        %fprintf( fid , 'monitor pD\n' );
     end
     fprintf( fid , 'update %d\n' , nSamples * thin );
     fprintf( fid , 'coda *, stem(''%s'')\n' , codastemFullPath );
@@ -382,7 +379,7 @@ function [modelFullPath, workingDirFullPath] = get_model_and_working_directory_p
     [ whdir , jagsModelBase , modelextension ] = fileparts( jagsFilenm );
     jagsModel = [ jagsModelBase modelextension ];
 
-    cd( whdir );
+    cd(whdir);
 	
 	% expand home dir (~) to absolute path
 	if strncmp(whdir, '~', 1)
@@ -405,10 +402,8 @@ function [modelFullPath, workingDirFullPath] = get_model_and_working_directory_p
         end
     end
 
-    cd( workingDir );
-
+    cd(workingDir);
     workingDirFullPath = pwd();
-
     cd(curdir);
 end
 
@@ -428,13 +423,11 @@ end
 fieldNames = fieldnames(dataStruct);
 Nparam = size(fieldNames, 1);
 
-%fileName = [fileName, '.txt'];
 fid = fopen(fileName, 'w');
 if fid == -1
     error(['Cannot open ', fileName ]);
 end
 
-%fprintf(fid,'list(');
 for i=1:Nparam
     fn = fieldNames(i);
     fval = fn{1};
