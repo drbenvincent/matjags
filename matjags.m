@@ -246,7 +246,7 @@ else % Run each chain serially
 end
 
 % Save the output from JAGS to a text file?
-if savejagsoutput==1
+if savejagsoutput
     for whchain=1:nChains
         filenmFullPath = fullfile(workingDirFullPath, sprintf( 'jagoutput%d.txt' , whchain ));
         [ fid , message ] = fopen( filenmFullPath , 'wt' );
@@ -291,7 +291,6 @@ for whchain=1:nChains
         fprintf( 'JAGS output for chain %d\n%s\n' , whchain , resultnow );
     end
     
-    
     % NOTE: if the error is "jags is not recognized as an internal or external
     % command, then the jags bin folder is not on the windows path"
 end
@@ -301,21 +300,11 @@ end
 codaIndexFullPath = fullfile(workingDirFullPath, 'CODA1index.txt');
 for i=1:nChains
     codaFFullPath = fullfile(workingDirFullPath, [ 'CODA' , num2str(i) , 'chain1.txt' ]);
-    
     S = bugs2mat(codaIndexFullPath, codaFFullPath);
     structArray(i) = S;
 end
 samples = structsToArrays(structArray);
-stats = computeStats(samples,doboot);
-
-
-%% DIC calculation
-if dodic
-    dbar = mean( samples.deviance(:));
-    dhat = min( samples.deviance(:));
-    pd = dbar - dhat;
-    stats.dic = pd + dbar;
-end
+stats = computeStats(samples,doboot,dodic);
 
 if isWorkDirTemporary
     delete(fullfile(workingDirFullPath, 'jag*'));
@@ -449,7 +438,7 @@ end
 for i=1:Nparam
     fn = fieldNames(i);
     fval = fn{1};
-    val = getfield(dataStruct, fval);
+    val = dataStruct.(fval);;
     [sfield1, sfield2]= size(val);
     
     msfield = max(sfield1, sfield2);
@@ -574,7 +563,6 @@ end
 
 function f = fullfileKPM(varargin)
 % fullfileKPM Concatenate strings with file separator, then convert it to a/b/c
-% function f = fullfileKPM(varargin)
 f = fullfile(varargin{:});
 f = strrep(f, '\', '/');
 end
@@ -599,61 +587,24 @@ fld = fieldnames(S);
 A = [];
 for fi=1:length(fld)
     fname = fld{fi};
-    tmp = getfield(S(1), fname);
+    tmp = S(1).(fname);
     sz = size(tmp);
     psz = prod(sz);
     data = zeros(C, psz);
     for c=1:C
-        tmp = getfield(S(c), fname);
+        tmp = S(c).(fname);
         %data = cat(1, data, tmp);
         data(c,:) = tmp(:)';
     end
     if sz(2) > 1 % vector or matrix variable
         data = reshape(data, [C sz]);
     end
-    A = setfield(A, fname, data);
+    A.(fname) = data;
 end
 end
 
 
-function [Rhat, m, s] = EPSR(samples) % TODO: This function is unused?
-%
-% function [R, m, s] = EPSR(samples)
-% "estimated potential scale reduction" statistics due to Gelman and Rubin.
-% samples(i,j) for sample i, chain j
-%
-% R = measure of scale reduction - value below 1.1 means converged:
-%                                  see Gelman p297
-% m = mean(samples)
-% s = std(samples)
-
-% This is the same as the netlab function convcalc(samples')
-
-[n m] = size(samples);
-meanPerChain = mean(samples,1); % each column of samples is a chain
-meanOverall = mean(meanPerChain);
-
-% Rhat only works if more than one chain is specified.
-if m > 1
-    % between sequence variace
-    B = (n/(m-1))*sum( (meanPerChain-meanOverall).^2);
-    
-    % within sequence variance
-    varPerChain = var(samples);
-    W = (1/m)*sum(varPerChain);
-    
-    vhat = ((n-1)/n)*W + (1/n)*B;
-    Rhat = sqrt(vhat/(W+eps));
-else
-    Rhat = nan;
-end
-
-m = meanOverall;
-s = std(samples(:));
-end
-
-
-function stats = computeStats(A,doboot)
+function stats = computeStats(A,doboot,dodic)
 
 fld = fieldnames(A);
 
@@ -663,7 +614,7 @@ stats = struct('Rhat',[], 'mean', [], 'median', [], 'std', [],...
 
 for fi=1:length(fld)
 	fname = fld{fi};
-	samples = getfield(A, fname);
+	samples = A.(fname);
 	
 	sz = size(samples);
 	Nchains = sz(1);
@@ -766,6 +717,16 @@ for fi=1:length(fld)
 	
 	stats.hdi_low.(fname) = squeeze(hdi_samples_overall_low);
 	stats.hdi_high.(fname) = squeeze(hdi_samples_overall_high);
+	
+
+end
+
+%% DIC calculation
+if dodic
+	dbar = mean( samples.deviance(:));
+	dhat = min( samples.deviance(:));
+	pd = dbar - dhat;
+	stats.dic = pd + dbar;
 end
 
 	function Rhat = calcRhat()
