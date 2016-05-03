@@ -325,11 +325,14 @@ end
 
 end
 
+
 %% ----- nested functions -----------------
+
 
 function result = is_modelstring(string)
     result = ~isempty(regexp(string, '^\s*model\s*\{'));
 end
+
 
 function [status, result] = run_jags_script(jagsScript)
     if ispc
@@ -346,6 +349,7 @@ function [status, result] = run_jags_script(jagsScript)
     end
 end
 
+
 function path = get_jags_path_from_possible_directories(possibleDirectories)
     for i=1:length(possibleDirectories)
         if is_jags_directory(possibleDirectories{i})
@@ -356,6 +360,7 @@ function path = get_jags_path_from_possible_directories(possibleDirectories)
     path = 'jags';
 end
 
+
 function result = is_jags_directory(directory)
     if ispc()
         jags = fullfile(directory, 'jags.bat');
@@ -364,6 +369,7 @@ function result = is_jags_directory(directory)
     end
     result = exist(jags, 'file');
 end
+
 
 function workingDirFullPath = get_working_directory(workingDir)
     curdir = pwd;
@@ -378,6 +384,7 @@ function workingDirFullPath = get_working_directory(workingDir)
     workingDirFullPath = pwd();
     cd(curdir);
 end
+
 
 function [modelFullPath, workingDirFullPath] = get_model_and_working_directory_paths(jagsFilenm, workingDir)
     % get the current directory
@@ -415,6 +422,7 @@ function [modelFullPath, workingDirFullPath] = get_model_and_working_directory_p
 
     cd(curdir);
 end
+
 
 function dataGenjags(dataStruct, fileName, addlines, dotranspose )
 % This is a helper function to generate data or init files for JAGS
@@ -545,9 +553,8 @@ if length( addlines ) > 0
 end
 
 fclose(fid);
-
-%%%%%%%%
 end
+
 
 function s = wb_strval(v)
 % Converts numeric value to a string that is acceptable by winbugs.
@@ -562,18 +569,17 @@ if strfind(s, 'E')
     s = strrep(s, 'E+0', 'E+');
     s = strrep(s, 'E-0', 'E-');
 end
-
-%%%%%%%%
 end
+
+
 function f = fullfileKPM(varargin)
 % fullfileKPM Concatenate strings with file separator, then convert it to a/b/c
 % function f = fullfileKPM(varargin)
-
 f = fullfile(varargin{:});
 f = strrep(f, '\', '/');
-
-%%%%%%%%
 end
+
+
 function A = structsToArrays(S)
 % Suppose S is this struct array
 %
@@ -607,9 +613,8 @@ for fi=1:length(fld)
     end
     A = setfield(A, fname, data);
 end
-
 end
-%%%%%%%%%%%%
+
 
 function [Rhat, m, s] = EPSR(samples) % TODO: This function is unused?
 %
@@ -645,9 +650,9 @@ end
 
 m = meanOverall;
 s = std(samples(:));
-
-%%%%%%%%%
 end
+
+
 function stats = computeStats(A,doboot)
 
 fld = fieldnames(A);
@@ -777,7 +782,6 @@ end
 	end
 end
 
-%%%%%%%%%%%%
 
 function S=bugs2mat(file_ind,file_out,dir)
 %BUGS2MAT  Read (Win)BUGS CODA output to matlab structure
@@ -858,6 +862,7 @@ while 1
 end
 fclose(f);
 end
+
 
 % PROCESS_OPTIONS - Processes options passed to a Matlab function.
 %                   This function provides a simple means of
