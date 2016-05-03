@@ -104,7 +104,7 @@ function [samples, stats, structArray] = matjags(dataStruct, jagsModel, initStru
 % * Changed the default working directory for JAGS to make it platform
 % independent
 
-defaultworkingDir = tempname;
+defaultworkingDir = tempname();
 
 % Get the parameters
 [ nChains, workingDir, nAdapt, nBurnin, nSamples, monitorParams, thin, dodic,...
@@ -741,7 +741,7 @@ for fi=1:length(fld)
 	[hdi_samples_overall_low, hdi_samples_overall_high] = HDIofSamples(reshaped_samples);
 	
 	if ~isnan(Rhat)
-		stats.Rhat = setfield(stats.Rhat, fname, squeeze(Rhat));
+		stats.Rhat.(fname) = squeeze(Rhat);
 	end
 	
 	% special case - if mean is a 1-d array, make sure it's long
@@ -750,19 +750,17 @@ for fi=1:length(fld)
 	st_mean_size = size(squ_mean_overall);
 	if (length(st_mean_size) == 2) && (st_mean_size(2) == 1)
 		stats.mean.(fname) = squ_mean_overall';
-		%stats.median.(fname) = squ_median_overall';
 	else
 		stats.mean.(fname) = squ_mean_overall;
-		%stats.median.(fname) = squ_median_overall;
 	end
 
-	stats.std = setfield(stats.std, fname, squeeze(st_std_overall));
+	stats.std.(fname) = squeeze(st_std_overall);
 	
-	stats.ci_low = setfield(stats.ci_low, fname, squeeze(ci_samples_overall_low));
-	stats.ci_high = setfield(stats.ci_high, fname, squeeze(ci_samples_overall_high));
+	stats.ci_low.(fname) = squeeze(ci_samples_overall_low);
+	stats.ci_high.(fname) = squeeze(ci_samples_overall_high);
 	
-	stats.hdi_low = setfield(stats.hdi_low, fname, squeeze(hdi_samples_overall_low));
-	stats.hdi_high = setfield(stats.hdi_high, fname, squeeze(hdi_samples_overall_high));
+	stats.hdi_low.(fname) = squeeze(hdi_samples_overall_low);
+	stats.hdi_high.(fname) = squeeze(hdi_samples_overall_high);
 end
 
 	function Rhat = calcRhat()
