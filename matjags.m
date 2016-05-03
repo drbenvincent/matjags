@@ -651,35 +651,30 @@ end
 function stats = computeStats(A,doboot)
 
 fld = fieldnames(A);
-N = length(fld);
-stats = struct('Rhat',[], 'mean', [], 'std', [],...
+
+stats = struct('Rhat',[], 'mean', [], 'median', [], 'std', [],...
 	'ci_low' , [] , 'ci_high' , [],...
 	'hdi_low', [] , 'hdi_high' , []);
 for fi=1:length(fld)
     fname = fld{fi};
     samples = getfield(A, fname);
-    sz = size(samples);
+	[Nchains, Nsamples, ~] = size(samples);
+    %sz = size(samples);
     clear R m s
     % samples(c, s, i,j,k)
-    Nchains = sz(1);
-    Nsamples = sz(2);
+    %Nchains = sz(1);
+    %Nsamples = sz(2);
     
     st_mean_per_chain = mean(samples, 2);
     st_mean_overall   = mean(st_mean_per_chain, 1);
+	
+	st_median_per_chain = median(samples, 2);
+    st_median_overall   = median(st_mean_per_chain, 1);
     
     
     % "estimated potential scale reduction" statistics due to Gelman and
     % Rubin.
-    if Nchains > 1
-        B = (Nsamples/Nchains-1) * ...
-            sum((st_mean_per_chain - repmat(st_mean_overall, [Nchains,1])).^2);
-        varPerChain = var(samples, 0, 2);
-        W = (1/Nchains) * sum(varPerChain);
-        vhat = ((Nsamples-1)/Nsamples) * W + (1/Nsamples) * B;
-        Rhat = sqrt(vhat./(W+eps));
-    else
-        Rhat = nan;
-    end
+	Rhat = calcRhat();
     
     % reshape and take standard deviation over all samples, all chains
     samp_shape = size(squeeze(st_mean_overall));
@@ -694,8 +689,8 @@ for fi=1:length(fld)
     ci_samples_overall_low = ci_samples_overall( 1,: );
     ci_samples_overall_high = ci_samples_overall( 2,: );
     
-		% get the 95% highest density intervals
-		[hdi_samples_overall_low, hdi_samples_overall_high] = HDIofSamples(reshaped_samples);
+	% get the 95% highest density intervals
+	[hdi_samples_overall_low, hdi_samples_overall_high] = HDIofSamples(reshaped_samples);
 		
     if ~isnan(Rhat)
         stats.Rhat = setfield(stats.Rhat, fname, squeeze(Rhat));
@@ -703,11 +698,14 @@ for fi=1:length(fld)
     
     % special case - if mean is a 1-d array, make sure it's long
     squ_mean_overall = squeeze(st_mean_overall);
+	squ_median_overall = squeeze(st_median_overall);
     st_mean_size = size(squ_mean_overall);
     if (length(st_mean_size) == 2) && (st_mean_size(2) == 1)
-        stats.mean = setfield(stats.mean, fname, squ_mean_overall');
-    else
-        stats.mean = setfield(stats.mean, fname, squ_mean_overall);
+		stats.mean.(fname) = squ_mean_overall';
+		stats.median.(fname) = squ_median_overall';
+	else
+		stats.mean.(fname) = squ_mean_overall;
+		stats.median.(fname) = squ_median_overall;
     end
     
     stats.std = setfield(stats.std, fname, squeeze(st_std_overall));
@@ -715,9 +713,22 @@ for fi=1:length(fld)
     stats.ci_low = setfield(stats.ci_low, fname, squeeze(ci_samples_overall_low));
     stats.ci_high = setfield(stats.ci_high, fname, squeeze(ci_samples_overall_high));
 		
-		stats.hdi_low = setfield(stats.hdi_low, fname, squeeze(hdi_samples_overall_low));
+	stats.hdi_low = setfield(stats.hdi_low, fname, squeeze(hdi_samples_overall_low));
     stats.hdi_high = setfield(stats.hdi_high, fname, squeeze(hdi_samples_overall_high));
 end
+
+	function Rhat = calcRhat()
+		if Nchains > 1
+			B = (Nsamples/Nchains-1) * ...
+				sum((st_mean_per_chain - repmat(st_mean_overall, [Nchains,1])).^2);
+			varPerChain = var(samples, 0, 2);
+			W = (1/Nchains) * sum(varPerChain);
+			vhat = ((Nsamples-1)/Nsamples) * W + (1/Nsamples) * B;
+			Rhat = sqrt(vhat./(W+eps));
+		else
+			Rhat = nan;
+		end
+	end
 end
 
 %%%%%%%%%%%%
