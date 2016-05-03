@@ -438,7 +438,7 @@ end
 for i=1:Nparam
     fn = fieldNames(i);
     fval = fn{1};
-    val = dataStruct.(fval);;
+    val = dataStruct.(fval);
     [sfield1, sfield2]= size(val);
     
     msfield = max(sfield1, sfield2);
@@ -475,8 +475,6 @@ for i=1:Nparam
         % non-trivial 2-D or more array
         valsize    = size(val);
         alldatalen = prod(valsize);
-        %alldata = reshape(val', [1, alldatalen]);
-        %alldata = alldata(:)';
         
         %Truccolo-Filho, Wilson <Wilson_Truccolo@brown.edu>
         if length(valsize)<3
@@ -501,7 +499,6 @@ for i=1:Nparam
             return
         end
         
-        %fprintf(fid, '%s <-\nstructure(.Data=c(', newfval);
         fprintf(fid, '%s <-\nstructure(c(', newfval);
         for j=1:alldatalen
             if (isnan(alldata(j)))
@@ -526,10 +523,8 @@ for i=1:Nparam
         end
     end
     if (i<Nparam)
-        %fprintf(fid, ', ');
         fprintf(fid, '\n');
     else
-        %fprintf(fid, ')\n');
         fprintf(fid, '\n');
     end
 end
@@ -561,13 +556,6 @@ end
 end
 
 
-function f = fullfileKPM(varargin)
-% fullfileKPM Concatenate strings with file separator, then convert it to a/b/c
-f = fullfile(varargin{:});
-f = strrep(f, '\', '/');
-end
-
-
 function A = structsToArrays(S)
 % Suppose S is this struct array
 %
@@ -593,7 +581,6 @@ for fi=1:length(fld)
     data = zeros(C, psz);
     for c=1:C
         tmp = S(c).(fname);
-        %data = cat(1, data, tmp);
         data(c,:) = tmp(:)';
     end
     if sz(2) > 1 % vector or matrix variable
@@ -683,7 +670,6 @@ for fi=1:length(fld)
 	% reshape and take standard deviation over all samples, all chains
 	samp_shape = size(squeeze(st_mean_overall));
 	% padarray is here http://www.mathworks.com/access/helpdesk/help/toolbox/images/padarray.html
-	%reshape_target = padarray(samp_shape, [0 1], Nchains * Nsamples, 'pre');
 	reshape_target = [Nchains * Nsamples, samp_shape]; % fix from Andrew Jackson  a.jackson@tcd.ie
 	reshaped_samples = reshape(samples, reshape_target);
 	st_std_overall = std(reshaped_samples);
@@ -702,7 +688,6 @@ for fi=1:length(fld)
 	
 	% special case - if mean is a 1-d array, make sure it's long
 	squ_mean_overall = squeeze(st_mean_overall);
-	%squ_median_overall = squeeze(st_median_overall);
 	st_mean_size = size(squ_mean_overall);
 	if (length(st_mean_size) == 2) && (st_mean_size(2) == 1)
 		stats.mean.(fname) = squ_mean_overall';
@@ -711,14 +696,11 @@ for fi=1:length(fld)
 	end
 
 	stats.std.(fname) = squeeze(st_std_overall);
-	
 	stats.ci_low.(fname) = squeeze(ci_samples_overall_low);
 	stats.ci_high.(fname) = squeeze(ci_samples_overall_high);
-	
 	stats.hdi_low.(fname) = squeeze(hdi_samples_overall_low);
 	stats.hdi_high.(fname) = squeeze(hdi_samples_overall_high);
 	
-
 end
 
 %% DIC calculation
