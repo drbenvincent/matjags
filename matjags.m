@@ -611,7 +611,7 @@ end
 end
 %%%%%%%%%%%%
 
-function [Rhat, m, s] = EPSR(samples)
+function [Rhat, m, s] = EPSR(samples) % TODO: This function is unused?
 %
 % function [R, m, s] = EPSR(samples)
 % "estimated potential scale reduction" statistics due to Gelman and Rubin.
@@ -655,66 +655,114 @@ fld = fieldnames(A);
 stats = struct('Rhat',[], 'mean', [], 'median', [], 'std', [],...
 	'ci_low' , [] , 'ci_high' , [],...
 	'hdi_low', [] , 'hdi_high' , []);
+
 for fi=1:length(fld)
-    fname = fld{fi};
-    samples = getfield(A, fname);
-	[Nchains, Nsamples, ~] = size(samples);
-    %sz = size(samples);
-    clear R m s
-    % samples(c, s, i,j,k)
-    %Nchains = sz(1);
-    %Nsamples = sz(2);
-    
-    st_mean_per_chain = mean(samples, 2);
-    st_mean_overall   = mean(st_mean_per_chain, 1);
+	fname = fld{fi};
+	samples = getfield(A, fname);
 	
-	st_median_per_chain = median(samples, 2);
-    st_median_overall   = median(st_mean_per_chain, 1);
-    
-    
-    % "estimated potential scale reduction" statistics due to Gelman and
-    % Rubin.
+	sz = size(samples);
+	Nchains = sz(1);
+	Nsamples = sz(2);
+	dims = ndims(samples);
+	
+	% mean
+	st_mean_per_chain = mean(samples, 2);
+	st_mean_overall   = mean(st_mean_per_chain, 1);
+	
+	% median
+	clear st_median
+	switch dims
+		case{2} % scalar
+			st_median = median( samples(:) );
+		case{3} % vector
+			for n=1:sz(3)
+				temp = samples(:,:,n);
+				st_median(n) = median( temp(:) );
+			end
+		case{4} % 2D matrix
+			for a=1:sz(3)
+				for b=1:sz(4)
+					temp = samples(:,:,a,b);
+					st_median(a,b) = median( temp(:) );
+				end
+			end
+		otherwise
+			warning('calculation of median not supported for >2D variables')
+			st_median = [];
+	end
+	stats.median.(fname)  = st_median;
+	
+	% mode
+	switch dims
+		case{2} % scalar
+			[F,XI]=ksdensity( samples(:) );
+			[~,ind]=max(F);
+			st_mode=XI(ind);
+		case{3} % vector
+			for n=1:sz(3)
+				temp = samples(:,:,n);
+				[F,XI]=ksdensity( temp(:) );
+				[~,ind]=max(F);
+				st_mode(n)=XI(ind);
+			end
+		case{4} % 2D matrix
+			for a=1:sz(3)
+				for b=1:sz(4)
+					temp = samples(:,:,a,b);
+					[F,XI]=ksdensity( temp(:) );
+					[~,ind]=max(F);
+					st_mode(a,b)=XI(ind);
+				end
+			end
+		otherwise
+			warning('calculation of mode not supported for >2D variables')
+			st_mode = [];
+	end
+	stats.mode.(fname)  = st_mode;
+	
+	% "estimated potential scale reduction" statistics due to Gelman and
+	% Rubin.
 	Rhat = calcRhat();
-    
-    % reshape and take standard deviation over all samples, all chains
-    samp_shape = size(squeeze(st_mean_overall));
-    % padarray is here http://www.mathworks.com/access/helpdesk/help/toolbox/images/padarray.html
-    %reshape_target = padarray(samp_shape, [0 1], Nchains * Nsamples, 'pre');
-    reshape_target = [Nchains * Nsamples, samp_shape]; % fix from Andrew Jackson  a.jackson@tcd.ie
-    reshaped_samples = reshape(samples, reshape_target);
-    st_std_overall = std(reshaped_samples);
-    
-    % get the 95% interval of the samples (not the mean)
-    ci_samples_overall = prctile( reshaped_samples , [ 2.5 97.5 ] , 1 );
-    ci_samples_overall_low = ci_samples_overall( 1,: );
-    ci_samples_overall_high = ci_samples_overall( 2,: );
-    
+	
+	% reshape and take standard deviation over all samples, all chains
+	samp_shape = size(squeeze(st_mean_overall));
+	% padarray is here http://www.mathworks.com/access/helpdesk/help/toolbox/images/padarray.html
+	%reshape_target = padarray(samp_shape, [0 1], Nchains * Nsamples, 'pre');
+	reshape_target = [Nchains * Nsamples, samp_shape]; % fix from Andrew Jackson  a.jackson@tcd.ie
+	reshaped_samples = reshape(samples, reshape_target);
+	st_std_overall = std(reshaped_samples);
+	
+	% get the 95% interval of the samples (not the mean)
+	ci_samples_overall = prctile( reshaped_samples , [ 2.5 97.5 ] , 1 );
+	ci_samples_overall_low = ci_samples_overall( 1,: );
+	ci_samples_overall_high = ci_samples_overall( 2,: );
+	
 	% get the 95% highest density intervals
 	[hdi_samples_overall_low, hdi_samples_overall_high] = HDIofSamples(reshaped_samples);
-		
-    if ~isnan(Rhat)
-        stats.Rhat = setfield(stats.Rhat, fname, squeeze(Rhat));
-    end
-    
-    % special case - if mean is a 1-d array, make sure it's long
-    squ_mean_overall = squeeze(st_mean_overall);
-	squ_median_overall = squeeze(st_median_overall);
-    st_mean_size = size(squ_mean_overall);
-    if (length(st_mean_size) == 2) && (st_mean_size(2) == 1)
+	
+	if ~isnan(Rhat)
+		stats.Rhat = setfield(stats.Rhat, fname, squeeze(Rhat));
+	end
+	
+	% special case - if mean is a 1-d array, make sure it's long
+	squ_mean_overall = squeeze(st_mean_overall);
+	%squ_median_overall = squeeze(st_median_overall);
+	st_mean_size = size(squ_mean_overall);
+	if (length(st_mean_size) == 2) && (st_mean_size(2) == 1)
 		stats.mean.(fname) = squ_mean_overall';
-		stats.median.(fname) = squ_median_overall';
+		%stats.median.(fname) = squ_median_overall';
 	else
 		stats.mean.(fname) = squ_mean_overall;
-		stats.median.(fname) = squ_median_overall;
-    end
-    
-    stats.std = setfield(stats.std, fname, squeeze(st_std_overall));
-    
-    stats.ci_low = setfield(stats.ci_low, fname, squeeze(ci_samples_overall_low));
-    stats.ci_high = setfield(stats.ci_high, fname, squeeze(ci_samples_overall_high));
-		
+		%stats.median.(fname) = squ_median_overall;
+	end
+
+	stats.std = setfield(stats.std, fname, squeeze(st_std_overall));
+	
+	stats.ci_low = setfield(stats.ci_low, fname, squeeze(ci_samples_overall_low));
+	stats.ci_high = setfield(stats.ci_high, fname, squeeze(ci_samples_overall_high));
+	
 	stats.hdi_low = setfield(stats.hdi_low, fname, squeeze(hdi_samples_overall_low));
-    stats.hdi_high = setfield(stats.hdi_high, fname, squeeze(hdi_samples_overall_high));
+	stats.hdi_high = setfield(stats.hdi_high, fname, squeeze(hdi_samples_overall_high));
 end
 
 	function Rhat = calcRhat()
