@@ -584,137 +584,116 @@ end
 end
 
 
-function stats = computeStats(A,doboot,dodic)
+function stats = computeStats(all_samples, ~, dodic)
+% For each variable (field in the all_samples structure), compute a series
+% of statistics (which will be fields of stats). The only complexity is
+% that we have to be sensitive to whether each variable is a scalar,
+% vector, or 2D matrix. Higher-dimensional variables are not currently
+% supported.
 
-fld = fieldnames(A);
+variable_names = fieldnames(all_samples);
 
 stats = struct('Rhat',[], 'mean', [], 'median', [], 'std', [],...
 	'ci_low' , [] , 'ci_high' , [],...
 	'hdi_low', [] , 'hdi_high' , []);
 
-for fi=1:length(fld)
-	fname = fld{fi};
-	samples = A.(fname);
+for v=1:length(variable_names)
+	var_name = variable_names{v};
+	var_samples = all_samples.(var_name);
 	
-	sz = size(samples);
+	sz = size(var_samples);
 	Nchains = sz(1);
 	Nsamples = sz(2);
-	dims = ndims(samples);
+	dims = ndims(var_samples);
 	
-	% mean
-	st_mean_per_chain = mean(samples, 2);
-	st_mean_overall   = mean(st_mean_per_chain, 1);
-	
-	% median
-	clear st_median
+	% Calculate stats
 	switch dims
 		case{2} % scalar
-			st_median = median( samples(:) );
+			stats.mode.(var_name)	= calcMode( var_samples(:) );
+			stats.median.(var_name) = median( var_samples(:) );
+			stats.mean.(var_name)	= mean( var_samples(:) );
+			stats.std.(var_name)	= std( var_samples(:) );
+			[stats.ci_low.(var_name), stats.ci_high.(var_name)] = calcCI(var_samples(:));
+			[stats.hdi_low.(var_name), stats.hdi_high.(var_name)] = calcHDI(var_samples(:));
+			
 		case{3} % vector
 			for n=1:sz(3)
-				temp = samples(:,:,n);
-				st_median(n) = median( temp(:) );
+				stats.mode.(var_name)(n)	= calcMode( vec(var_samples(:,:,n)) );
+				stats.median.(var_name)(n)	= median( vec(var_samples(:,:,n)) );
+				stats.mean.(var_name)(n)	= mean( vec(var_samples(:,:,n)) );
+				stats.std.(var_name)(n)		= std( vec(var_samples(:,:,n)) );
+				[stats.ci_low.(var_name), stats.ci_high.(var_name)] = calcCI( vec(var_samples(:,:,n)) );
+				[stats.hdi_low.(var_name), stats.hdi_high.(var_name)] = calcHDI( vec(var_samples(:,:,n)) );
 			end
 		case{4} % 2D matrix
 			for a=1:sz(3)
 				for b=1:sz(4)
-					temp = samples(:,:,a,b);
-					st_median(a,b) = median( temp(:) );
+					stats.mode.(var_name)(a,b)		= calcMode( vec(var_samples(:,:,a,b)) );
+					stats.median.(var_name)(a,b)	= median( vec(var_samples(:,:,a,b)) );
+					stats.mean.(var_name)(a,b)		= mean( vec(var_samples(:,:,a,b)) );
+					stats.std.(var_name)(a,b)		= std( vec(var_samples(:,:,a,b)) );
+					[stats.ci_low.(var_name), stats.ci_high.(var_name)] = calcCI( vec(var_samples(:,:,a,b)) );
+					[stats.hdi_low.(var_name), stats.hdi_high.(var_name)] = calcHDI( vec(var_samples(:,:,a,b)) );
 				end
 			end
 		otherwise
-			warning('calculation of median not supported for >2D variables')
-			st_median = [];
+			warning('calculation of stats not supported for >2D variables. You could implement it and send a pull request.')
+			stats.mode.(var_name) = [];
+			stats.median.(var_name) = [];
+			stats.mean.(var_name) = [];
+			stats.std.(var_name) = [];
+			stats.ci_low.(var_name) = [];
+			stats.ci_high.(var_name) = [];
+			stats.hdi_low.(var_name) = [];
+			stats.hdi_high.(var_name) = [];
 	end
-	stats.median.(fname)  = st_median;
 	
-	% mode
-	switch dims
-		case{2} % scalar
-			[F,XI]=ksdensity( samples(:) );
-			[~,ind]=max(F);
-			st_mode=XI(ind);
-		case{3} % vector
-			for n=1:sz(3)
-				temp = samples(:,:,n);
-				[F,XI]=ksdensity( temp(:) );
-				[~,ind]=max(F);
-				st_mode(n)=XI(ind);
-			end
-		case{4} % 2D matrix
-			for a=1:sz(3)
-				for b=1:sz(4)
-					temp = samples(:,:,a,b);
-					[F,XI]=ksdensity( temp(:) );
-					[~,ind]=max(F);
-					st_mode(a,b)=XI(ind);
-				end
-			end
-		otherwise
-			warning('calculation of mode not supported for >2D variables')
-			st_mode = [];
-	end
-	stats.mode.(fname)  = st_mode;
-	
-	% "estimated potential scale reduction" statistics due to Gelman and
-	% Rubin.
+	%% "estimated potential scale reduction" statistics due to Gelman and Rubin.
 	Rhat = calcRhat();
-	
-	% reshape and take standard deviation over all samples, all chains
-	samp_shape = size(squeeze(st_mean_overall));
-	% padarray is here http://www.mathworks.com/access/helpdesk/help/toolbox/images/padarray.html
-	reshape_target = [Nchains * Nsamples, samp_shape]; % fix from Andrew Jackson  a.jackson@tcd.ie
-	reshaped_samples = reshape(samples, reshape_target);
-	st_std_overall = std(reshaped_samples);
-	
-	% get the 95% interval of the samples (not the mean)
-	ci_samples_overall = prctile( reshaped_samples , [ 2.5 97.5 ] , 1 );
-	ci_samples_overall_low = ci_samples_overall( 1,: );
-	ci_samples_overall_high = ci_samples_overall( 2,: );
-	
-	% get the 95% highest density intervals
-	[hdi_samples_overall_low, hdi_samples_overall_high] = HDIofSamples(reshaped_samples);
-	
 	if ~isnan(Rhat)
-		stats.Rhat.(fname) = squeeze(Rhat);
+		stats.Rhat.(var_name) = squeeze(Rhat);
 	end
-	
-	% special case - if mean is a 1-d array, make sure it's long
-	squ_mean_overall = squeeze(st_mean_overall);
-	st_mean_size = size(squ_mean_overall);
-	if (length(st_mean_size) == 2) && (st_mean_size(2) == 1)
-		stats.mean.(fname) = squ_mean_overall';
-	else
-		stats.mean.(fname) = squ_mean_overall;
-	end
-
-	stats.std.(fname) = squeeze(st_std_overall);
-	stats.ci_low.(fname) = squeeze(ci_samples_overall_low);
-	stats.ci_high.(fname) = squeeze(ci_samples_overall_high);
-	stats.hdi_low.(fname) = squeeze(hdi_samples_overall_low);
-	stats.hdi_high.(fname) = squeeze(hdi_samples_overall_high);
 	
 end
 
 %% DIC calculation
 if dodic
-	dbar = mean( samples.deviance(:));
-	dhat = min( samples.deviance(:));
+	dbar = mean( var_samples.deviance(:));
+	dhat = min( var_samples.deviance(:));
 	pd = dbar - dhat;
 	stats.dic = pd + dbar;
 end
 
 	function Rhat = calcRhat()
+		st_mean_per_chain = mean(var_samples, 2);
+		st_mean_overall   = mean(st_mean_per_chain, 1);
+
 		if Nchains > 1
 			B = (Nsamples/Nchains-1) * ...
 				sum((st_mean_per_chain - repmat(st_mean_overall, [Nchains,1])).^2);
-			varPerChain = var(samples, 0, 2);
+			varPerChain = var(var_samples, 0, 2);
 			W = (1/Nchains) * sum(varPerChain);
 			vhat = ((Nsamples-1)/Nsamples) * W + (1/Nsamples) * B;
 			Rhat = sqrt(vhat./(W+eps));
 		else
 			Rhat = nan;
 		end
+	end
+
+	function [low, high] = calcCI(reshaped_samples)
+		% get the 95% interval of the posterior
+		ci_samples_overall = prctile( reshaped_samples , [ 2.5 97.5 ] , 1 );
+		ci_samples_overall_low = ci_samples_overall( 1,: );
+		ci_samples_overall_high = ci_samples_overall( 2,: );
+		low = squeeze(ci_samples_overall_low);
+		high = squeeze(ci_samples_overall_high);
+	end
+
+	function [low, high] = 	calcHDI(reshaped_samples)
+		% get the 95% highest density intervals of the posterior
+		[hdi_samples_overall_low, hdi_samples_overall_high] = HDIofSamples(reshaped_samples);
+		low = squeeze(hdi_samples_overall_low);
+		high = squeeze(hdi_samples_overall_high);
 	end
 end
 
@@ -751,7 +730,7 @@ function S=bugs2mat(file_ind,file_out,dir)
 % 2003-01-14 Aki.Vehtari@hut.fi - Replace "." with "_" in variable names
 % slightly modified by Maryam Mahdaviani, August 2005 (to suppress redundant output)
 
-if nargin>2,
+if nargin>2
     file_ind=[dir '/' file_ind];
     file_out=[dir '/' file_out];
 end
@@ -944,4 +923,15 @@ for i=1:N
 	HDI_lower(i)	= selectedSortedSamples( minInd );
 	HDI_upper(i)	= selectedSortedSamples( minInd + ciIdxInc);
 end
+end
+
+function mode = calcMode(x)
+[F, XI] = ksdensity( x );
+[~, ind] = max(F);
+mode = XI(ind);
+end
+
+function colvec = vec(x)
+% turn an input matrix into a column vector
+colvec = x(:);
 end
