@@ -1,4 +1,4 @@
-function [samples, stats, structArray] = matjags(dataStruct, jagsModel, initStructs , varargin)
+function [samples, stats, structArray] = matjags(dataStruct, jagsModel, initStructs, varargin)
 % MATJAGS, a Matlab interface for JAGS
 % Version 1.3.1. Tested on JAGS 3.3.0, Windows 64-bit version
 %
@@ -106,27 +106,29 @@ function [samples, stats, structArray] = matjags(dataStruct, jagsModel, initStru
 
 defaultworkingDir = tempname();
 
-% Get the parameters
-[ nChains, workingDir, nAdapt, nBurnin, nSamples, monitorParams, thin, dodic,...
-	doParallel, savejagsoutput, verbosity, cleanup, showwarnings,...
-	dotranspose, rndseed, doboot ] =  ...
-	process_options(...
-	varargin, ...
-	'nChains', 1, ...
-	'workingDir', defaultworkingDir, ...
-	'nAdapt', 1000, ...
-	'nBurnin', 1000, ...
-	'nSamples', 5000, ...
-	'monitorParams', {}, ...
-	'thin', 1, ...
-	'dic' , 1, ...
-	'doParallel' , 0, ...
-	'savejagsoutput' , 1, ...
-	'verbosity' , 0,...
-	'cleanup' , 0, ...
-	'showwarnings' , 0 , ...
-	'dotranspose' , 0 , ...
-	'rndseed',0);
+% Process input options
+opts = inputParser;
+opts.FunctionName = mfilename;
+opts.addRequired('dataStruct',@isstruct);
+opts.addRequired('jagsModel',@isstr);
+opts.addRequired('initStructs',@isstruct);
+opts.addParameter('nChains', 1, @isscalar);
+opts.addParameter('workingDir', defaultworkingDir, @isstr);
+opts.addParameter('nAdapt',1000, @isscalar);
+opts.addParameter('nBurnin',1000, @isscalar)
+opts.addParameter('nSamples',5000, @isscalar)
+opts.addParameter('monitorParams',{}, @iscellstr)
+opts.addParameter('thin',1, @isscalar)
+opts.addParameter('dic',1, @isscalar)
+opts.addParameter('doParallel',0, @isscalar)
+opts.addParameter('savejagsoutput',1, @isscalar)
+opts.addParameter('verbosity', 0, @isscalar)
+opts.addParameter('cleanup', 0, @isscalar)
+opts.addParameter('showwarnings', 0, @isscalar)
+opts.addParameter('dotranspose', 0, @isscalar)
+opts.addParameter('rndseed', 0, @isscalar)
+opts.parse(dataStruct, jagsModel, initStructs, varargin{:});
+opts = opts.Results;
 
 % Core-logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 [modelFullPath, workingDirFullPath, isWorkDirTemporary] = set_up();
@@ -139,27 +141,27 @@ clean_up();
 % ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	function [modelFullPath, workingDirFullPath, isWorkDirTemporary] = set_up()
-		isWorkDirTemporary = strcmp(defaultworkingDir, workingDir) && ~exist(workingDir, 'file');
+		isWorkDirTemporary = strcmp(defaultworkingDir, opts.workingDir) && ~exist(opts.workingDir, 'file');
 		
-		if length( initStructs ) ~= nChains
+		if length( opts.initStructs ) ~= opts.nChains
 			error( 'Number of structures with initial values should match number of chains' );
 		end
 		
-		if is_modelstring(jagsModel)
-			workingDirFullPath = get_working_directory(workingDir);
+		if is_modelstring(opts.jagsModel)
+			workingDirFullPath = get_working_directory(opts.workingDir);
 			modelFullPath = fullfile(workingDirFullPath, 'jags_model.jags');
 			fid = fopen(modelFullPath, 'w');
 			if fid == -1
 				error(['Cannot write model to "', modelFullPath, '"' ]);
 			end
-			fprintf(fid, '%s', jagsModel);
+			fprintf(fid, '%s', opts.jagsModel);
 			fclose(fid);
 		else
-			[modelFullPath, workingDirFullPath] = get_model_and_working_directory_paths(jagsModel, workingDir);
+			[modelFullPath, workingDirFullPath] = get_model_and_working_directory_paths(opts.jagsModel, opts.workingDir);
 		end
 		
 		% Do we want to cleanup files before we start?
-		if cleanup==1
+		if opts.cleanup==1
 			delete( fullfile(workingDirFullPath, 'CODA*') );
 			delete( fullfile(workingDirFullPath, 'jag*') );
 		end
@@ -168,9 +170,9 @@ clean_up();
 	function [jagsDataFullPath, nmonitor] = create_data_file()
 		% Create the data file
 		jagsDataFullPath = fullfile(workingDirFullPath, 'jagsdata.R');
-		dataGenjags(dataStruct, jagsDataFullPath , '', dotranspose );
+		dataGenjags(opts.dataStruct, jagsDataFullPath , '', opts.dotranspose );
 		
-		nmonitor = length( monitorParams );
+		nmonitor = length( opts.monitorParams );
 		if nmonitor == 0
 			error( 'Please specify at least one node name to monitor' );
 		end
@@ -180,12 +182,12 @@ clean_up();
 		% Pick a random seed. Remember that 'randi' is itself subject to the random
 		% seed, so you may wish to randomise this at the start of your matlab
 		% session.
-		if rndseed==1
+		if opts.rndseed==1
 			seed = randi([1 10000000],1);
 		end
 		
 		% Develop a separate JAGS script for each chain
-		for whchain=1:nChains
+		for whchain=1:opts.nChains
 			codastemFullPath     = fullfile(workingDirFullPath, sprintf( 'CODA%d' , whchain ));
 			InitDataFullPath     = fullfile(workingDirFullPath, sprintf( 'jagsinit%d.R' , whchain ));
 			
@@ -196,7 +198,7 @@ clean_up();
 				error( message );
 			end
 			
-			if dodic
+			if opts.dic
 				fprintf( fid , 'load dic\n' );
 			end
 			
@@ -205,20 +207,20 @@ clean_up();
 			fprintf( fid , 'compile, nchains(1)\n' );
 			fprintf( fid , 'parameters in "%s"\n' , InitDataFullPath );
 			fprintf( fid , 'initialize\n' );
-			fprintf( fid , 'adapt %d\n' , nAdapt );
-			fprintf( fid , 'update %d\n' , nBurnin );
+			fprintf( fid , 'adapt %d\n' , opts.nAdapt );
+			fprintf( fid , 'update %d\n' , opts.nBurnin );
 			for j=1:nmonitor
-				fprintf( fid , 'monitor set %s, thin(%d)\n' , monitorParams{ j } , thin );
+				fprintf( fid , 'monitor set %s, thin(%d)\n' , opts.monitorParams{ j } , opts.thin );
 			end
-			if dodic
+			if opts.dic
 				fprintf( fid , 'monitor deviance\n' );
 			end
-			fprintf( fid , 'update %d\n' , nSamples * thin );
+			fprintf( fid , 'update %d\n' , opts.nSamples * opts.thin );
 			fprintf( fid , 'coda *, stem(''%s'')\n' , codastemFullPath );
 			fclose( fid );
 			
 			% Create the init file
-			switch rndseed
+			switch opts.rndseed
 				case{0}
 					addlines = { '".RNG.name" <- "base::Mersenne-Twister"' , ...
 						sprintf( '".RNG.seed" <- %d' , whchain ) };
@@ -227,31 +229,31 @@ clean_up();
 					addlines = { '".RNG.name" <- "base::Mersenne-Twister"' , ...
 						sprintf( '".RNG.seed" <- %d' , whchain+seed ) };
 			end
-			dataGenjags( initStructs, InitDataFullPath , addlines, dotranspose );
+			dataGenjags( opts.initStructs, InitDataFullPath , addlines, opts.dotranspose );
 		end
 	end
 
 	function [result, status] = run_jags()
 			
-		status = cell( 1,nChains );
-		result = cell( 1,nChains );
+		status = cell( 1,opts.nChains );
+		result = cell( 1,opts.nChains );
 			
 		% Do we use the Matlab parallel computing toolbox?
-		if doParallel
+		if opts.doParallel
 			% open parallel pool
 			if isempty(gcp('nocreate'))
 				error( 'Matlab pool of workers not initialized. Use command "parpool(7)" for example to open up a pool of 7 workers' );
 			end
-			parfor whchain=1:nChains
-				if verbosity > 0
+			parfor whchain=1:opts.nChains
+				if opts.verbosity > 0
 					fprintf( 'Running chain %d (parallel execution)\n' , whchain  );
 				end
 				jagsScript   = fullfile(workingDirFullPath, sprintf( 'jagscript%d.cmd' , whchain ));
 				[status{ whchain },result{whchain}] = run_jags_script(jagsScript);
 			end
 		else
-			for whchain=1:nChains
-				if verbosity > 0
+			for whchain=1:opts.nChains
+				if opts.verbosity > 0
 					fprintf( 'Running chain %d (serial execution)\n' , whchain );
 				end
 				jagsScript   = fullfile(workingDirFullPath, sprintf( 'jagscript%d.cmd' , whchain ));
@@ -260,8 +262,8 @@ clean_up();
 		end
 		
 		% Save the output from JAGS to a text file?
-		if savejagsoutput
-			for whchain=1:nChains
+		if opts.savejagsoutput
+			for whchain=1:opts.nChains
 				filenmFullPath = fullfile(workingDirFullPath, sprintf( 'jagoutput%d.txt' , whchain ));
 				[ fid , message ] = fopen( filenmFullPath , 'wt' );
 				if fid == -1
@@ -277,7 +279,7 @@ clean_up();
 	function error_reporting()
 		%% Do some error checking.
 		% For each chain, check if the output contains some error or warning message.
-		for whchain=1:nChains
+		for whchain=1:opts.nChains
 			resultnow = result{whchain};
 			statusnow = status{ whchain };
 			if status{whchain} > 0
@@ -294,7 +296,7 @@ clean_up();
 			end
 			
 			% Do we get a warning message anywhere from JAGS --> produce a matlab warning
-			if showwarnings ~= 0
+			if opts.showwarnings ~= 0
 				pattern = [ 'WARNING' ];
 				errstr = regexpi( resultnow , pattern , 'match' );
 				if ~isempty( errstr )
@@ -303,7 +305,7 @@ clean_up();
 				end
 			end
 			
-			if verbosity == 2
+			if opts.verbosity == 2
 				fprintf( 'JAGS output for chain %d\n%s\n' , whchain , resultnow );
 			end
 			
@@ -316,13 +318,13 @@ clean_up();
 		%% Extract information from the output files so we can pass it back to Matlab
 		% the index files are identical across chains, just pick first one
 		codaIndexFullPath = fullfile(workingDirFullPath, 'CODA1index.txt');
-		for i=1:nChains
+		for i=1:opts.nChains
 			codaFFullPath = fullfile(workingDirFullPath, [ 'CODA' , num2str(i) , 'chain1.txt' ]);
 			S = bugs2mat(codaIndexFullPath, codaFFullPath);
 			structArray(i) = S;
 		end
 		samples = structsToArrays(structArray);
-		stats = computeStats(samples,doboot,dodic);
+		stats = computeStats(samples,opts.dic);
 	end
 
 	function clean_up()
@@ -608,7 +610,7 @@ end
 end
 
 
-function stats = computeStats(all_samples, ~, dodic)
+function stats = computeStats(all_samples, dodic)
 % For each variable (field in the all_samples structure), compute a series
 % of statistics (which will be fields of stats). The only complexity is
 % that we have to be sensitive to whether each variable is a scalar,
@@ -800,125 +802,6 @@ while 1
 	i=i+1;
 end
 fclose(f);
-end
-
-
-% PROCESS_OPTIONS - Processes options passed to a Matlab function.
-%                   This function provides a simple means of
-%                   parsing attribute-value options.  Each option is
-%                   named by a unique string and is given a default
-%                   value.
-%
-% Usage:  [var1, var2, ..., varn[, unused]] = ...
-%           process_optons(args, ...
-%                           str1, def1, str2, def2, ..., strn, defn)
-%
-% Arguments:
-%            args            - a cell array of input arguments, such
-%                              as that provided by VARARGIN.  Its contents
-%                              should alternate between strings and
-%                              values.
-%            str1, ..., strn - Strings that are associated with a
-%                              particular variable
-%            def1, ..., defn - Default values returned if no option
-%                              is supplied
-%
-% Returns:
-%            var1, ..., varn - values to be assigned to variables
-%            unused          - an optional cell array of those
-%                              string-value pairs that were unused;
-%                              if this is not supplied, then a
-%                              warning will be issued for each
-%                              option in args that lacked a match.
-%
-% Examples:
-%
-% Suppose we wish to define a Matlab function 'func' that has
-% required parameters x and y, and optional arguments 'u' and 'v'.
-% With the definition
-%
-%   function y = func(x, y, varargin)
-%
-%     [u, v] = process_options(varargin, 'u', 0, 'v', 1);
-%
-% calling func(0, 1, 'v', 2) will assign 0 to x, 1 to y, 0 to u, and 2
-% to v.  The parameter names are insensitive to case; calling
-% func(0, 1, 'V', 2) has the same effect.  The function call
-%
-%   func(0, 1, 'u', 5, 'z', 2);
-%
-% will result in u having the value 5 and v having value 1, but
-% will issue a warning that the 'z' option has not been used.  On
-% the other hand, if func is defined as
-%
-%   function y = func(x, y, varargin)
-%
-%     [u, v, unused_args] = process_options(varargin, 'u', 0, 'v', 1);
-%
-% then the call func(0, 1, 'u', 5, 'z', 2) will yield no warning,
-% and unused_args will have the value {'z', 2}.  This behaviour is
-% useful for functions with options that invoke other functions
-% with options; all options can be passed to the outer function and
-% its unprocessed arguments can be passed to the inner function.
-
-% Copyright (C) 2002 Mark A. Paskin
-% GNU GPL
-function [varargout] = process_options(args, varargin)
-
-% Check the number of input arguments
-n = length(varargin);
-if (mod(n, 2))
-	error('Each option must be a string/value pair.');
-end
-
-% Check the number of supplied output arguments
-if (nargout < (n / 2))
-	error('Insufficient number of output arguments given');
-elseif (nargout == (n / 2))
-	warn = 1;
-	nout = n / 2;
-else
-	warn = 0;
-	nout = n / 2 + 1;
-end
-
-% Set outputs to be defaults
-varargout = cell(1, nout);
-for i=2:2:n
-	varargout{i/2} = varargin{i};
-end
-
-% Now process all arguments
-nunused = 0;
-for i=1:2:length(args)
-	found = 0;
-	for j=1:2:n
-		if strcmpi(args{i}, varargin{j})
-			varargout{(j + 1)/2} = args{i + 1};
-			found = 1;
-			break;
-		end
-	end
-	if (~found)
-		if (warn)
-			warning(sprintf('Option ''%s'' not used.', args{i}));
-			args{i}
-		else
-			nunused = nunused + 1;
-			unused{2 * nunused - 1} = args{i};
-			unused{2 * nunused} = args{i + 1};
-		end
-	end
-end
-
-% Assign the unused arguments
-if (~warn)
-	if (nunused)
-		varargout{nout} = unused;
-	else
-		varargout{nout} = cell(0);
-	end
-end
 end
 
 
