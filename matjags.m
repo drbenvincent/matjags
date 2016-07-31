@@ -130,7 +130,7 @@ opts.addParameter('rndseed', 0, @isscalar)
 opts.parse(dataStruct, jagsModel, initStructs, varargin{:});
 opts = opts.Results;
 
-% Core-logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+% Core matjags logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 [modelFullPath, workingDirFullPath, isWorkDirTemporary] = set_up();
 [jagsDataFullPath, nmonitor] = create_data_file();
 make_JAGS_scripts();
@@ -138,7 +138,7 @@ make_JAGS_scripts();
 error_reporting();
 [samples, stats] = coda2matlab();
 clean_up();
-% ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+% ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	function [modelFullPath, workingDirFullPath, isWorkDirTemporary] = set_up()
 		isWorkDirTemporary = strcmp(defaultworkingDir, opts.workingDir) && ~exist(opts.workingDir, 'file');
@@ -616,6 +616,7 @@ function stats = computeStats(all_samples, dodic)
 % that we have to be sensitive to whether each variable is a scalar,
 % vector, or 2D matrix. Higher-dimensional variables are not currently
 % supported.
+disp('Calculating statistics')
 
 variable_names = fieldnames(all_samples);
 
@@ -648,8 +649,10 @@ for v=1:length(variable_names)
 				stats.median.(var_name)(n)	= median( vec(var_samples(:,:,n)) );
 				stats.mean.(var_name)(n)	= mean( vec(var_samples(:,:,n)) );
 				stats.std.(var_name)(n)		= std( vec(var_samples(:,:,n)) );
-				[stats.ci_low.(var_name), stats.ci_high.(var_name)] = calcCI( vec(var_samples(:,:,n)) );
-				[stats.hdi_low.(var_name), stats.hdi_high.(var_name)] = calcHDI( vec(var_samples(:,:,n)) );
+				[stats.ci_low.(var_name)(n),...
+					stats.ci_high.(var_name)(n)] = calcCI( vec(var_samples(:,:,n)) );
+				[stats.hdi_low.(var_name)(n),...
+					stats.hdi_high.(var_name)(n)] = calcHDI( vec(var_samples(:,:,n)) );
 			end
 		case{4} % 2D matrix
 			for a=1:sz(3)
@@ -658,8 +661,10 @@ for v=1:length(variable_names)
 					stats.median.(var_name)(a,b)	= median( vec(var_samples(:,:,a,b)) );
 					stats.mean.(var_name)(a,b)		= mean( vec(var_samples(:,:,a,b)) );
 					stats.std.(var_name)(a,b)		= std( vec(var_samples(:,:,a,b)) );
-					[stats.ci_low.(var_name), stats.ci_high.(var_name)] = calcCI( vec(var_samples(:,:,a,b)) );
-					[stats.hdi_low.(var_name), stats.hdi_high.(var_name)] = calcHDI( vec(var_samples(:,:,a,b)) );
+					[stats.ci_low.(var_name)(a,b),...
+						stats.ci_high.(var_name)(a,b)] = calcCI( vec(var_samples(:,:,a,b)) );
+					[stats.hdi_low.(var_name)(a,b),...
+						stats.hdi_high.(var_name(a,b))] = calcHDI( vec(var_samples(:,:,a,b)) );
 				end
 			end
 		otherwise
