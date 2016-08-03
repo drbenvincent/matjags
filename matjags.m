@@ -664,7 +664,7 @@ for v=1:length(variable_names)
 					[stats.ci_low.(var_name)(a,b),...
 						stats.ci_high.(var_name)(a,b)] = calcCI( vec(var_samples(:,:,a,b)) );
 					[stats.hdi_low.(var_name)(a,b),...
-						stats.hdi_high.(var_name(a,b))] = calcHDI( vec(var_samples(:,:,a,b)) );
+						stats.hdi_high.(var_name)(a,b)] = calcHDI( vec(var_samples(:,:,a,b)) );
 				end
 			end
 		otherwise
@@ -707,6 +707,7 @@ end
 			vhat = ((Nsamples-1)/Nsamples) * W + (1/Nsamples) * B;
 			Rhat = sqrt(vhat./(W+eps));
 		else
+			warning('Cannot calculate Rhat with 1 chain.')
 			Rhat = nan;
 		end
 	end
