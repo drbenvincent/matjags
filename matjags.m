@@ -106,31 +106,8 @@ function [samples, stats, structArray] = matjags(dataStruct, jagsModel, initStru
 
 defaultworkingDir = tempname();
 
-% Process input options
-opts = inputParser;
-opts.FunctionName = mfilename;
-opts.addRequired('dataStruct',@isstruct);
-opts.addRequired('jagsModel',@isstr);
-opts.addRequired('initStructs',@isstruct);
-opts.addParameter('nChains', 1, @isscalar);
-opts.addParameter('workingDir', defaultworkingDir, @isstr);
-opts.addParameter('nAdapt',1000, @isscalar);
-opts.addParameter('nBurnin',1000, @isscalar)
-opts.addParameter('nSamples',5000, @isscalar)
-opts.addParameter('monitorParams',{}, @iscellstr)
-opts.addParameter('thin',1, @isscalar)
-opts.addParameter('dic',1, @isscalar)
-opts.addParameter('doParallel',0, @isscalar)
-opts.addParameter('savejagsoutput',1, @isscalar)
-opts.addParameter('verbosity', 0, @isscalar)
-opts.addParameter('cleanup', 0, @isscalar)
-opts.addParameter('showwarnings', 0, @isscalar)
-opts.addParameter('dotranspose', 0, @isscalar)
-opts.addParameter('rndseed', 0, @isscalar)
-opts.parse(dataStruct, jagsModel, initStructs, varargin{:});
-opts = opts.Results;
-
 % Core matjags logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+opts = parseInputs(dataStruct, jagsModel, initStructs, varargin{:});
 [modelFullPath, workingDirFullPath, isWorkDirTemporary] = set_up();
 [jagsDataFullPath, nmonitor] = create_data_file();
 make_JAGS_scripts();
@@ -139,6 +116,31 @@ error_reporting();
 [samples, stats] = coda2matlab();
 clean_up();
 % ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	function opts = parseInputs(dataStruct, jagsModel, initStructs, varargin)
+		opts = inputParser;
+		opts.FunctionName = mfilename;
+		opts.addRequired('dataStruct',@isstruct);
+		opts.addRequired('jagsModel',@isstr);
+		opts.addRequired('initStructs',@isstruct);
+		opts.addParameter('nChains', 1, @isscalar);
+		opts.addParameter('workingDir', defaultworkingDir, @isstr);
+		opts.addParameter('nAdapt',1000, @isscalar);
+		opts.addParameter('nBurnin',1000, @isscalar)
+		opts.addParameter('nSamples',5000, @isscalar)
+		opts.addParameter('monitorParams',{}, @iscellstr)
+		opts.addParameter('thin',1, @isscalar)
+		opts.addParameter('dic',1, @isscalar)
+		opts.addParameter('doParallel',0, @isscalar)
+		opts.addParameter('savejagsoutput',1, @isscalar)
+		opts.addParameter('verbosity', 0, @isscalar)
+		opts.addParameter('cleanup', 0, @isscalar)
+		opts.addParameter('showwarnings', 0, @isscalar)
+		opts.addParameter('dotranspose', 0, @isscalar)
+		opts.addParameter('rndseed', 0, @isscalar)
+		opts.parse(dataStruct, jagsModel, initStructs, varargin{:});
+		opts = opts.Results;
+	end
 
 	function [modelFullPath, workingDirFullPath, isWorkDirTemporary] = set_up()
 		isWorkDirTemporary = strcmp(defaultworkingDir, opts.workingDir) && ~exist(opts.workingDir, 'file');
@@ -162,7 +164,7 @@ clean_up();
 		
 		% add path of kde toolbox: used in the calcMode() function
 		path_of_this_mfile = strrep(which(mfilename),[mfilename '.m'],'');
-		addpath(fullfile(path_of_this_mfile, 'kde'))
+		addpath(fullfile(path_of_this_mfile, 'private/kde'))
 		
 		% Do we want to cleanup files before we start?
 		if opts.cleanup==1
@@ -238,42 +240,24 @@ clean_up();
 	end
 
 	function [result, status] = run_jags()
-			
 		status = cell( 1,opts.nChains );
 		result = cell( 1,opts.nChains );
-			
-		% Do we use the Matlab parallel computing toolbox?
+
 		if opts.doParallel
-			% open parallel pool
-			if isempty(gcp('nocreate'))
-				error( 'Matlab pool of workers not initialized. Use command "parpool(7)" for example to open up a pool of 7 workers' );
-			end
-			parfor whchain=1:opts.nChains
-				start(whchain) = tic;
-				if opts.verbosity > 0
-					fprintf( 'matjags: Running chain %d (parallel execution)\n' , whchain  );
-				end
-				jagsScript   = fullfile(workingDirFullPath, sprintf( 'jagscript%d.cmd' , whchain ));
-				[status{ whchain },result{whchain}] = run_jags_script(jagsScript);
-				if opts.verbosity > 0
-					durationSeconds(whchain) = toc(start(whchain));
-				end
-			end
+			run_jags_parallel()
+		else
+			run_jags_serial()
+		end
+		
+		% report on duration
+		if opts.verbosity > 0
 			for whchain=1:opts.nChains
 				samplesPerSecond(whchain) = (opts.nBurnin + opts.nSamples ) / durationSeconds(whchain);
 				fprintf( 'matjags: chain %d done: %.1f seconds (~%.0f samples/second)\n' ,...
 					whchain, durationSeconds(whchain), samplesPerSecond(whchain) );
 			end
-		else
-			for whchain=1:opts.nChains
-				if opts.verbosity > 0
-					fprintf( 'Running chain %d (serial execution)\n' , whchain );
-				end
-				jagsScript   = fullfile(workingDirFullPath, sprintf( 'jagscript%d.cmd' , whchain ));
-				[status{ whchain },result{whchain}] = run_jags_script(jagsScript);
-			end
 		end
-		
+			
 		% Save the output from JAGS to a text file?
 		if opts.savejagsoutput
 			for whchain=1:opts.nChains
@@ -285,6 +269,35 @@ clean_up();
 				resultnow = result{whchain};
 				fprintf( fid , '%s' , resultnow );
 				fclose( fid );
+			end
+		end
+		
+		function run_jags_parallel()
+			% open parallel pool
+			if isempty(gcp('nocreate'))
+				error( 'Matlab pool of workers not initialized. Use command "parpool(7)" for example to open up a pool of 7 workers' );
+			end
+			parfor whchain = 1:opts.nChains
+				start(whchain) = tic;
+				if opts.verbosity > 0
+					fprintf( 'matjags: Running chain %d (parallel execution)\n' , whchain  );
+				end
+				jagsScript   = fullfile(workingDirFullPath, sprintf( 'jagscript%d.cmd' , whchain ));
+				[status{ whchain },result{whchain}] = run_jags_script(jagsScript);
+				durationSeconds(whchain) = toc(start(whchain));
+			end
+
+		end
+		
+		function run_jags_serial()
+			for whchain=1:opts.nChains
+				start(whchain) = tic;
+				if opts.verbosity > 0
+					fprintf( 'Running chain %d (serial execution)\n' , whchain );
+				end
+				jagsScript   = fullfile(workingDirFullPath, sprintf( 'jagscript%d.cmd' , whchain ));
+				[status{ whchain },result{whchain}] = run_jags_script(jagsScript);
+				durationSeconds(whchain) = toc(start(whchain));
 			end
 		end
 	end
@@ -588,298 +601,4 @@ end
 end
 
 
-function A = structsToArrays(S)
-% Suppose S is this struct array
-%
-% S(c).X1(s)
-% S(c).X2(s,i)
-% S(c).X3(s,i,j)
-%
-% where s=1:N in all cases
-%
-% Then we return
-% A.X1(c,s)
-% A.X2(c,s,i)
-% A.X3(c,s,i,j)
 
-C = length(S);
-fld = fieldnames(S);
-A = [];
-for fi=1:length(fld)
-	fname = fld{fi};
-	tmp = S(1).(fname);
-	sz = size(tmp);
-	psz = prod(sz);
-	data = zeros(C, psz);
-	for c=1:C
-		tmp = S(c).(fname);
-		data(c,:) = tmp(:)';
-	end
-	if sz(2) > 1 % vector or matrix variable
-		data = reshape(data, [C sz]);
-	end
-	A.(fname) = data;
-end
-end
-
-
-function stats = computeStats(all_samples, dodic)
-% For each variable (field in the all_samples structure), compute a series
-% of statistics (which will be fields of stats). The only complexity is
-% that we have to be sensitive to whether each variable is a scalar,
-% vector, or 2D matrix. Higher-dimensional variables are not currently
-% supported.
-fprintf('matjags: Calculating statistics... ')
-tic
-variable_names = fieldnames(all_samples);
-
-stats = struct('Rhat',[], 'mean', [], 'median', [], 'std', [],...
-	'ci_low' , [] , 'ci_high' , [],...
-	'hdi_low', [] , 'hdi_high' , []);
-
-for v=1:length(variable_names)
-	var_name = variable_names{v};
-	var_samples = all_samples.(var_name);
-	
-	sz = size(var_samples);
-	Nchains = sz(1);
-	Nsamples = sz(2);
-	dims = ndims(var_samples);
-	
-	% Calculate stats
-	switch dims
-		case{2} % scalar
-			stats.mode.(var_name)	= calcMode( var_samples(:) );
-			stats.median.(var_name) = median( var_samples(:) );
-			stats.mean.(var_name)	= mean( var_samples(:) );
-			stats.std.(var_name)	= std( var_samples(:) );
-			[stats.ci_low.(var_name), stats.ci_high.(var_name)] = calcCI(var_samples(:));
-			[stats.hdi_low.(var_name), stats.hdi_high.(var_name)] = calcHDI(var_samples(:));
-			
-		case{3} % vector
-			for n=1:sz(3)
-				stats.mode.(var_name)(n)	= calcMode( vec(var_samples(:,:,n)) );
-				stats.median.(var_name)(n)	= median( vec(var_samples(:,:,n)) );
-				stats.mean.(var_name)(n)	= mean( vec(var_samples(:,:,n)) );
-				stats.std.(var_name)(n)		= std( vec(var_samples(:,:,n)) );
-				[stats.ci_low.(var_name)(n),...
-					stats.ci_high.(var_name)(n)] = calcCI( vec(var_samples(:,:,n)) );
-				[stats.hdi_low.(var_name)(n),...
-					stats.hdi_high.(var_name)(n)] = calcHDI( vec(var_samples(:,:,n)) );
-			end
-		case{4} % 2D matrix
-			for a=1:sz(3)
-				for b=1:sz(4)
-					stats.mode.(var_name)(a,b)		= calcMode( vec(var_samples(:,:,a,b)) );
-					stats.median.(var_name)(a,b)	= median( vec(var_samples(:,:,a,b)) );
-					stats.mean.(var_name)(a,b)		= mean( vec(var_samples(:,:,a,b)) );
-					stats.std.(var_name)(a,b)		= std( vec(var_samples(:,:,a,b)) );
-					[stats.ci_low.(var_name)(a,b),...
-						stats.ci_high.(var_name)(a,b)] = calcCI( vec(var_samples(:,:,a,b)) );
-					[stats.hdi_low.(var_name)(a,b),...
-						stats.hdi_high.(var_name)(a,b)] = calcHDI( vec(var_samples(:,:,a,b)) );
-				end
-			end
-		otherwise
-			warning('calculation of stats not supported for >2D variables. You could implement it and send a pull request.')
-			stats.mode.(var_name) = [];
-			stats.median.(var_name) = [];
-			stats.mean.(var_name) = [];
-			stats.std.(var_name) = [];
-			stats.ci_low.(var_name) = [];
-			stats.ci_high.(var_name) = [];
-			stats.hdi_low.(var_name) = [];
-			stats.hdi_high.(var_name) = [];
-	end
-	
-	%% "estimated potential scale reduction" statistics due to Gelman and Rubin.
-	Rhat = calcRhat();
-	if ~isnan(Rhat)
-		stats.Rhat.(var_name) = squeeze(Rhat);
-	end	
-end
-
-%% DIC calculation
-if dodic
-	dbar = mean( var_samples.deviance(:));
-	dhat = min( var_samples.deviance(:));
-	pd = dbar - dhat;
-	stats.dic = pd + dbar;
-end
-
-fprintf('took %.0f seconds\n', toc)
-
-	function Rhat = calcRhat()
-		st_mean_per_chain = mean(var_samples, 2);
-		st_mean_overall   = mean(st_mean_per_chain, 1);
-		
-		if Nchains > 1
-			B = (Nsamples/Nchains-1) * ...
-				sum((st_mean_per_chain - repmat(st_mean_overall, [Nchains,1])).^2);
-			varPerChain = var(var_samples, 0, 2);
-			W = (1/Nchains) * sum(varPerChain);
-			vhat = ((Nsamples-1)/Nsamples) * W + (1/Nsamples) * B;
-			Rhat = sqrt(vhat./(W+eps));
-		else
-			warning('Cannot calculate Rhat with 1 chain.')
-			Rhat = nan;
-		end
-	end
-
-	function [low, high] = calcCI(reshaped_samples)
-		% get the 95% interval of the posterior
-		ci_samples_overall = prctile( reshaped_samples , [ 2.5 97.5 ] , 1 );
-		ci_samples_overall_low = ci_samples_overall( 1,: );
-		ci_samples_overall_high = ci_samples_overall( 2,: );
-		low = squeeze(ci_samples_overall_low);
-		high = squeeze(ci_samples_overall_high);
-	end
-
-	function [low, high] = 	calcHDI(reshaped_samples)
-		% get the 95% highest density intervals of the posterior
-		[hdi_samples_overall_low, hdi_samples_overall_high] = HDIofSamples(reshaped_samples);
-		low = squeeze(hdi_samples_overall_low);
-		high = squeeze(hdi_samples_overall_high);
-	end
-end
-
-
-function S=bugs2mat(file_ind,file_out,dir)
-%BUGS2MAT  Read (Win)BUGS CODA output to matlab structure
-%
-% S=bugs2mat(file_ind,file_out,dir)
-%  file_ind - index file (in ascii format)
-%  file_out - output file (in ascii format)
-%  dir      - directory where the files are found (optional)
-%  S        - matlab structure, with CODA variables as fields
-%
-% The samples are stored in added 1'st dimension,
-% so that 2 x 3 variable R with 1000 samples would be
-% returned as S.R(1000,2,3)
-%
-% Note1: the data is returned in a structure that makes extraction
-% of individual sample sequencies easy: the sequencies are
-% directly Nx1 double vectors, as for example S.R(:,1,2).
-% The computed statistics must, however, be squeezed,
-% as mean(S.R,1) is a 1x2x2 matrix.
-%
-% Note2: in variable names "." is replaced with "_"
-
-% To change the output structure, edit the 'eval' line in the m-file.
-% For example, to return all samples as a cell, wich possibly varying
-% number of samples for elements of a multidimensional variable,
-% cange the 'eval' line to
-%    eval(['S.' varname '={samples};']);
-% Then the samples of R(2,1) would be returned as cell S.R(2,1)
-
-% (c) Jouko.Lampinen@hut.fi, 2000
-% 2003-01-14 Aki.Vehtari@hut.fi - Replace "." with "_" in variable names
-% slightly modified by Maryam Mahdaviani, August 2005 (to suppress redundant output)
-
-if nargin>2
-	file_ind=[dir '/' file_ind];
-	file_out=[dir '/' file_out];
-end
-
-ind=readfile(file_ind);
-
-fprintf('matjags: loading %s... ', file_out)
-tic
-data=load(file_out);
-fprintf('took %3.1f seconds\n', toc)
-
-Nvars=size(ind,1);
-S=[];
-for k=1:Nvars
-	[varname,indexstr]=strtok(ind(k,:));
-	varname=strrep(varname,'.','_');
-	indices=str2num(indexstr);
-	if size(indices)~=[1 2]
-		error(['Cannot read line: [' ind(k,:) ']']);
-	end
-	sdata = size(data);
-	%indices
-	samples=data(indices(1):indices(2),2);
-	varname(varname=='[')='(';
-	varname(varname==']')=')';
-	leftparen=find(varname=='(');
-	outstruct=varname;
-	if ~isempty(leftparen)
-		outstruct=sprintf('%s(:,%s',varname(1:leftparen-1),varname(leftparen+1:end));
-	end
-	eval(['S.' outstruct '=samples;']);
-end
-end
-
-
-function T=readfile(filename)
-f=fopen(filename,'r');
-if f==-1, fclose(f); error(filename); end
-i=1;
-while 1
-	clear line;
-	line=fgetl(f);
-	if ~isstr(line), break, end
-	n=length(line);
-	T(i,1:n)=line(1:n);
-	i=i+1;
-end
-fclose(f);
-end
-
-
-function [HDI_lower, HDI_upper] = HDIofSamples(samples)
-% Calculate the 95% Highest Density Intervals. This has advantages over the
-% regular 95% credible interval for some 'shapes' of distribution.
-%
-% Translated by Benjamin T. Vincent (www.inferenceLab.com) from code in:
-% Kruschke, J. K. (2015). Doing Bayesian Data Analysis: A Tutorial with R,
-% JAGS, and Stan. Academic Press.
-
-credibilityMass = 0.95;
-
-[nSamples, N] = size(samples);
-for i=1:N
-	selectedSortedSamples = sort(samples(:,i));
-	ciIdxInc = floor( credibilityMass * numel( selectedSortedSamples ) );
-	nCIs = numel( selectedSortedSamples ) - ciIdxInc;
-	
-	ciWidth=zeros(nCIs,1);
-	for n =1:nCIs
-		ciWidth(n) = selectedSortedSamples( n + ciIdxInc ) - selectedSortedSamples(n);
-	end
-	
-	[~, minInd] = min(ciWidth);
-	HDI_lower(i)	= selectedSortedSamples( minInd );
-	HDI_upper(i)	= selectedSortedSamples( minInd + ciIdxInc);
-end
-end
-
-function mode = calcMode(x)
-% SLOW MATLAB KSDENSITY
-% [F, XI] = ksdensity( x );
-% [~, ind] = max(F);
-% mode = XI(ind);
-
-% FASTER
-if range(x)==0
-	% zero variance, so mode = mean. `kde` crashes in this case
-	mode = mean(x);
-elseif isinf(range(x))
-	warning('values supplied seem to have an infitite range')
-	mode = [];
-else
-	[bandwidth,density,xmesh,cdf] = kde(x,...
-		1024,...
-		min(x)-range(x)/10 ,...
-		max(x)+range(x)/10);
-	
-	[~, index_of_max_value] = max(density);
-	mode = xmesh(index_of_max_value);
-end
-end
-
-function colvec = vec(x)
-% turn an input matrix into a column vector
-colvec = x(:);
-end
