@@ -160,6 +160,10 @@ clean_up();
 			[modelFullPath, workingDirFullPath] = get_model_and_working_directory_paths(opts.jagsModel, opts.workingDir);
 		end
 		
+		% add path of kde toolbox: used in the calcMode() function
+		path_of_this_mfile = strrep(which(mfilename),[mfilename '.m'],'');
+		addpath(fullfile(path_of_this_mfile, 'kde'))
+		
 		% Do we want to cleanup files before we start?
 		if opts.cleanup==1
 			delete( fullfile(workingDirFullPath, 'CODA*') );
@@ -245,11 +249,20 @@ clean_up();
 				error( 'Matlab pool of workers not initialized. Use command "parpool(7)" for example to open up a pool of 7 workers' );
 			end
 			parfor whchain=1:opts.nChains
+				start(whchain) = tic;
 				if opts.verbosity > 0
-					fprintf( 'Running chain %d (parallel execution)\n' , whchain  );
+					fprintf( 'matjags: Running chain %d (parallel execution)\n' , whchain  );
 				end
 				jagsScript   = fullfile(workingDirFullPath, sprintf( 'jagscript%d.cmd' , whchain ));
 				[status{ whchain },result{whchain}] = run_jags_script(jagsScript);
+				if opts.verbosity > 0
+					durationSeconds(whchain) = toc(start(whchain));
+				end
+			end
+			for whchain=1:opts.nChains
+				samplesPerSecond(whchain) = (opts.nBurnin + opts.nSamples ) / durationSeconds(whchain);
+				fprintf( 'matjags: chain %d done: %.1f seconds (~%.0f samples/second)\n' ,...
+					whchain, durationSeconds(whchain), samplesPerSecond(whchain) );
 			end
 		else
 			for whchain=1:opts.nChains
@@ -616,8 +629,8 @@ function stats = computeStats(all_samples, dodic)
 % that we have to be sensitive to whether each variable is a scalar,
 % vector, or 2D matrix. Higher-dimensional variables are not currently
 % supported.
-disp('Calculating statistics')
-
+fprintf('matjags: Calculating statistics... ')
+tic
 variable_names = fieldnames(all_samples);
 
 stats = struct('Rhat',[], 'mean', [], 'median', [], 'std', [],...
@@ -683,8 +696,7 @@ for v=1:length(variable_names)
 	Rhat = calcRhat();
 	if ~isnan(Rhat)
 		stats.Rhat.(var_name) = squeeze(Rhat);
-	end
-	
+	end	
 end
 
 %% DIC calculation
@@ -694,6 +706,8 @@ if dodic
 	pd = dbar - dhat;
 	stats.dic = pd + dbar;
 end
+
+fprintf('took %.0f seconds\n', toc)
 
 	function Rhat = calcRhat()
 		st_mean_per_chain = mean(var_samples, 2);
@@ -769,7 +783,10 @@ end
 
 ind=readfile(file_ind);
 
+fprintf('matjags: loading %s... ', file_out)
+tic
 data=load(file_out);
+fprintf('took %3.1f seconds\n', toc)
 
 Nvars=size(ind,1);
 S=[];
@@ -839,9 +856,27 @@ end
 end
 
 function mode = calcMode(x)
-[F, XI] = ksdensity( x );
-[~, ind] = max(F);
-mode = XI(ind);
+% SLOW MATLAB KSDENSITY
+% [F, XI] = ksdensity( x );
+% [~, ind] = max(F);
+% mode = XI(ind);
+
+% FASTER
+if range(x)==0
+	% zero variance, so mode = mean. `kde` crashes in this case
+	mode = mean(x);
+elseif isinf(range(x))
+	warning('values supplied seem to have an infitite range')
+	mode = [];
+else
+	[bandwidth,density,xmesh,cdf] = kde(x,...
+		1024,...
+		min(x)-range(x)/10 ,...
+		max(x)+range(x)/10);
+	
+	[~, index_of_max_value] = max(density);
+	mode = xmesh(index_of_max_value);
+end
 end
 
 function colvec = vec(x)
