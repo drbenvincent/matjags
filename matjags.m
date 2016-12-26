@@ -107,6 +107,7 @@ function [samples, stats, structArray] = matjags(dataStruct, jagsModel, initStru
 defaultworkingDir = tempname();
 
 % Core matjags logic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+majags_start = tic;
 opts = parseInputs(dataStruct, jagsModel, initStructs, varargin{:});
 [modelFullPath, workingDirFullPath, isWorkDirTemporary] = set_up();
 [jagsDataFullPath, nmonitor] = create_data_file();
@@ -115,6 +116,7 @@ make_JAGS_scripts();
 error_reporting();
 [samples, stats] = coda2matlab();
 clean_up();
+fprintf('majags: total entry/exit duration = %.1f seconds\n\n', toc(majags_start))
 % ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	function opts = parseInputs(dataStruct, jagsModel, initStructs, varargin)
@@ -344,7 +346,7 @@ clean_up();
 		%% Extract information from the output files so we can pass it back to Matlab
 		% the index files are identical across chains, just pick first one
 		codaIndexFullPath = fullfile(workingDirFullPath, 'CODA1index.txt');
-		for i=1:opts.nChains
+		parfor i=1:opts.nChains %<------ EXPERIMENTAL: loading of data in bugs2mat() takes A LONG TIME!!!!
 			codaFFullPath = fullfile(workingDirFullPath, [ 'CODA' , num2str(i) , 'chain1.txt' ]);
 			S = bugs2mat(codaIndexFullPath, codaFFullPath);
 			structArray(i) = S;
